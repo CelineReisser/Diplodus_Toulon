@@ -1,0 +1,167 @@
+---
+title: "SAR genetic analysis"
+author: "Celine Reisser"
+date: "2025-07-30"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading the libraries
+```{r libraries, echo=FALSE}
+
+suppressPackageStartupMessages({
+library(vcfR)
+library(dartR)
+library(adegenet)
+library(tidyverse)
+library(radiator)
+library(dplyr)
+library(ggpubr)
+library(ggrepel)
+library(StAMPP)
+library(reshape)
+library(gdata)
+library(PopGenome)
+library(poppr)
+library(ape)
+library(igraph)
+library(FSA)
+library(hierfstat)
+})
+
+#set seed:
+set.seed(123)
+
+```
+
+## Loading the dataset
+```{r datasets, echo=F}
+
+vcf <- "populations.snps.biallelic.dp15.maf0.05.vcf"
+
+obj.vcf <- read.vcfR(vcf)
+
+obj.gl <- vcfR2genlight(obj.vcf)
+
+#Add pop info:
+pop_list <- read.table("metadata.txt",header=T)
+pop(obj.gl)<-pop_list$Population
+
+
+#Remove individuals that have more than 20% missing data
+dropped<-c("SAR_23_522","SAR_23_431","SAR_23_539")
+obj.gl2<-gl.drop.ind(obj.gl,dropped,recalc=T,mono.rm=T)
+
+
+#Verifying that the created object is in good format:
+obj.gl2x <- gl.compliance.check(obj.gl2)
+
+#Getting a genind object:
+obj.gi <- gl2gi(obj.gl2x)
+gc()
+
+
+
+
+
+```
+
+## Look at heterozygosity:
+
+```{r het}
+
+# Get stats from dartR
+
+#Get het per ind:
+het_values <- gl.report.heterozygosity(obj.gl2x,method = "ind")
+
+het_table <- data.frame(
+  Individual = het_values$ind.name,
+  Population = obj.gl2x@pop,
+  Ho = het_values$Ho
+)
+
+kruskal.test(het_table$Ho ~ het_table$Population)
+dunnTest(het_table$Ho ~ het_table$Population,method="bonferroni")
+
+coly<- c('limegreen','dodgerblue','coral1')
+
+plot1<-ggplot(het_table,aes(x=as.factor(Population),y=Ho)) +  geom_boxplot(aes(fill=Population)) + scale_fill_manual(values = coly) +theme_minimal() + theme(legend.position = "none",panel.grid = element_blank(),axis.line = element_line(color = "black"),axis.ticks = element_line(color = "black"),axis.text = element_text(color = "black", size = 12),axis.title = element_text(size = 14)) + xlab("")
+
+plot1
+
+
+```
+Here we see that we see differences among pop, Mejean is the one driving the difference. It is more heterozygous.
+
+
+## Performing PCA on individuals
+
+Look at the presence or absence of structure in the dataset:
+
+```{r pca, echo=FALSE}
+
+#Replace missing genotype value by mean
+X <- scaleGen(obj.gi, NA.method ="mean")
+
+#Perform PCA keeping the first 4
+pca1 <- dudi.pca(X, scannf = FALSE, nf = 4)
+summary(pca1)
+
+#Set up object for ggplot graphic representation
+new<-cbind(pca1$li,obj.gi@pop)
+str(new)
+names(new)<-c("PC1","PC2","PC3","PC4","pop")
+
+plot2<-ggplot(data=new,aes(x=PC1,y=PC2,col=pop)) + 
+  geom_point(alpha=0.7,size=3) + 
+  scale_color_manual(values = coly)+
+  theme_minimal()+theme(text = element_text(size = 11), legend.position = "right",panel.grid = element_blank(),axis.line = element_line(color = "black"),axis.ticks = element_line(color = "black"),axis.text = element_text(color = "black", size = 12),axis.title = element_text(size = 14)) +
+  labs(color="Population") + xlab(paste("PC1 (", round(pca1$eig[1]/sum(pca1$eig)*100,digits=2), "%)"))+
+  ylab(paste("PC2 (", round(pca1$eig[2]/sum(pca1$eig)*100,digits=2), "%)"))
+plot2
+
+#Group the graphs for publication:
+png(file="Het_PCA.png",width=500,height=200)
+ggarrange(plot1,plot2,labels=c("A","B"),ncol=2)
+dev.off()
+
+pdf(file="Het_PCA.pdf",width=7,height=3)
+ggarrange(plot1,plot2,labels=c("A","B"),ncol=2)
+dev.off()
+
+
+
+```
+
+
+
+## Testing unsupervised clustering to prove no structure according to geographical origin
+
+```{r}
+grp.all <- find.clusters(obj.gi,stat ="AIC")
+100
+1
+```
+
+
+There is only one group... no structuring. Testing with FST
+
+## FST calculations
+
+```{r, Fst}
+
+# Using StAMPP on the genind object:
+dat<-stamppConvert(obj.gl2x, type = "genlight")
+fstdat<-stamppFst(dat, nboots = 10000, percent = 95, nclusters = 1)
+fstdat$Fsts
+fstdat$Pvalues
+
+```
+
+
