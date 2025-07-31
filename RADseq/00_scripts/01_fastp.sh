@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #PBS -q sequentiel
 #PBS -l walltime=00:10:00
-#PBS -J 1-270
+#PBS -J 1-145
 #PBS -l mem=40g
 #PBS -N 01_Filtering_Rad
 
